@@ -61,18 +61,32 @@ class HelpCog(commands.Cog):
             inline=False,
         )
         embed.add_field(
+            name="!add [HH:MM] [text] / !add recurring [HH:MM] [text]",
+            value=(
+                "Add a one-off timed reminder — a plain DM ping at an exact "
+                "clock time, separate from the morning/evening checklists. "
+                "Without `recurring` it fires once (next time that clock "
+                "time comes around) and then deletes itself. With "
+                "`recurring` it fires every day at that time.\n"
+                "Examples: `!add 15:30 Call to book a meeting`, "
+                "`!add recurring 07:00 Take out the trash`"
+            ),
+            inline=False,
+        )
+        embed.add_field(
             name="!tasks",
             value=(
-                "Show your current task list, numbered, with checked status, "
-                "🔁 for recurring tasks, and a tag showing which checklist(s) "
-                "each task appears on. Also shows your current morning/evening "
-                "reminder times at the bottom."
+                "Show your current task list AND timed reminders, numbered "
+                "together, with checked status, 🔁 for recurring items, and "
+                "a tag showing which checklist(s) each task appears on. "
+                "Also shows your current morning/evening reminder times at "
+                "the bottom."
             ),
             inline=False,
         )
         embed.add_field(
             name="!remove [number]",
-            value="Remove a task by its number as shown in `!tasks`.\nExample: `!remove 2`",
+            value="Remove a task or timed reminder by its number as shown in `!tasks`.\nExample: `!remove 2`",
             inline=False,
         )
         embed.add_field(

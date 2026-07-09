@@ -36,9 +36,23 @@ DATA_FILE = "data.json"
 #   - "show_when": which checklist(s) the task appears on — "morning"
 #     (default), "evening", or "both". Missing on older data, so callers
 #     should read it with task.get("show_when", "morning").
+#
+# Custom-time reminders (e.g. "!add 15:30 call to book a meeting") are a
+# separate, simpler concept: a plain-text DM fired at an exact clock time,
+# not part of the morning/evening checklist. Each has:
+#   - "id": stable id, same purpose as on tasks.
+#   - "time": "HH:MM" in the user's local timezone.
+#   - "label": the reminder text.
+#   - "recurring": if True, fires every day at that time until removed
+#     with !remove; if False, fires once (next time that clock time comes
+#     around) and is then automatically deleted.
+#   - "last_sent": ISO date string of the last time it fired, used to
+#     avoid firing twice in the same minute-loop tick. None for a
+#     recurring reminder that hasn't fired yet.
 DEFAULT_USER = {
     "timezone": "UTC",
     "tasks": [],  # list of {"id", "label", "emoji", "checked", "recurring", "shown", "show_when"}
+    "custom_reminders": [],  # list of {"id", "time", "label", "recurring", "last_sent"}
     "streak": 0,
     "checklist_completed_today": False,
     "morning_time": "08:00",     # "HH:MM" in the user's local timezone, user-configurable

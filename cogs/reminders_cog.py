@@ -15,6 +15,9 @@ local timezone via zoneinfo, and:
   - at the user's configured evening_time (default 20:00): sends the
     interactive evening checklist DM (tasks with show_when "evening" or
     "both"), or a plain check-in message if there's nothing to show
+  - at each custom_reminders entry's own "time": sends a plain-text ping.
+    One-off reminders (recurring=False) are deleted right after firing;
+    recurring ones stay and fire again the next day at the same time.
 
 Duplicate sends (e.g. if the loop is delayed and "catches" the same
 local time twice) are prevented by recording the local date the
@@ -94,6 +97,9 @@ class RemindersCog(commands.Cog):
                 user["last_evening_sent"] = today_str
                 changed = True
 
+            if await self._process_custom_reminders(int(user_id_str), user, local_now, today_str):
+                changed = True
+
         if changed:
             storage.save_data(data)
 
@@ -162,6 +168,52 @@ class RemindersCog(commands.Cog):
                     "Want to change when your reminders are sent? Use "
                     "`!morningtime HH:MM` and `!eveningtime HH:MM`."
                 )
+        except discord.Forbidden:
+            pass
+
+    async def _process_custom_reminders(self, user_id: int, user: dict, local_now, today_str: str) -> bool:
+        """
+        Fire any custom-time reminders whose local time matches right now.
+        One-off reminders are dropped from the list after firing;
+        recurring ones just get their last_sent date bumped so they don't
+        fire twice in the same minute and can fire again tomorrow.
+        Returns True if anything changed (so the caller knows to persist).
+        """
+        changed = False
+        remaining = []
+        for reminder in user.get("custom_reminders", []):
+            try:
+                hour, minute = _parse_hhmm(reminder["time"])
+            except (ValueError, KeyError):
+                remaining.append(reminder)
+                continue
+
+            should_fire = (
+                local_now.hour == hour
+                and local_now.minute == minute
+                and reminder.get("last_sent") != today_str
+            )
+
+            if not should_fire:
+                remaining.append(reminder)
+                continue
+
+            await self._send_custom_reminder(user_id, reminder["label"])
+            changed = True
+            if reminder.get("recurring"):
+                reminder["last_sent"] = today_str
+                remaining.append(reminder)
+            # One-off reminders are simply not re-appended, dropping them.
+
+        user["custom_reminders"] = remaining
+        return changed
+
+    async def _send_custom_reminder(self, user_id: int, label: str):
+        discord_user = await self._fetch_user_safely(user_id)
+        if discord_user is None:
+            return
+        try:
+            await discord_user.send(f"⏰ Reminder: {label}")
         except discord.Forbidden:
             pass
 

@@ -13,16 +13,25 @@ it appears on: morning (default), evening, or both. Accepts either the
 short form ("morning"/"evening"/"both") or the long form
 ("morning-only"/"evening-only"/"both-times") — both work the same.
 
+!add also supports a completely separate kind of reminder: a custom
+exact-time ping (e.g. "!add 15:30 call to book a meeting"), unrelated to
+the morning/evening checklist. By default it fires once, next time that
+clock time comes around, then deletes itself. Add "recurring" to make it
+fire every day at that time instead.
+
 Usage:
     !add Do laundry                        -> one-time, morning checklist, default emoji
     !add 🏋️ Train for 30 min                -> one-time, morning checklist, custom emoji
     !add recurring 💊 Take medicine         -> recurring, morning checklist, custom emoji
     !add evening Read before bed            -> one-time, evening checklist only
     !add recurring both 🚰 Drink water       -> recurring, shown on both checklists
-    !tasks                                  -> list all tasks with their status
-    !remove 2                               -> remove task number 2 from !tasks
+    !add 15:30 Call to book a meeting       -> one-off ping at 15:30, not part of any checklist
+    !add recurring 07:00 Take out the trash -> ping at 07:00 every day
+    !tasks                                  -> list all tasks and timed reminders with their status
+    !remove 2                               -> remove item number 2 from !tasks
 """
 
+import re
 import uuid
 
 import discord
@@ -31,6 +40,9 @@ from discord.ext import commands
 import storage
 
 DEFAULT_EMOJI = "📌"
+
+# Matches a 24-hour "HH:MM" clock time, e.g. "9:05" or "23:59".
+TIME_RE = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
 
 # Recognized leading keywords for !add, checked case-insensitively and
 # consumed in any order before the optional emoji + task text. Both the
@@ -46,14 +58,17 @@ WHEN_KEYWORDS = {
 }
 
 
-def parse_add_arguments(argument: str) -> tuple[bool, str, str, str]:
+def parse_add_arguments(argument: str) -> tuple:
     """
-    Parse the raw text after !add into (recurring, show_when, emoji, label).
+    Parse the raw text after !add. Returns a tagged tuple:
+        ("checklist", recurring, show_when, emoji, label)
+        ("timed", recurring, time_str, label)
 
-    The expected format is:
-        [recurring] [morning-only|evening-only|both-times] [emoji] <label text>
-    where the flags and the emoji are all optional, and the two flags can
-    appear in either order. show_when defaults to "morning" if not given.
+    "recurring" is always an optional leading word. What follows decides
+    the kind: a "HH:MM" token means a custom-time reminder ("timed");
+    otherwise the normal checklist-task format applies:
+        [morning-only|evening-only|both-times] [emoji] <label text>
+    show_when defaults to "morning" if not given.
 
     An "emoji" is detected heuristically: a single word made up entirely
     of non-ASCII characters (covers standard emoji without pulling in an
@@ -64,14 +79,26 @@ def parse_add_arguments(argument: str) -> tuple[bool, str, str, str]:
         raise ValueError("No task text provided.")
 
     recurring = False
-    show_when = "morning"
+    if words[0].lower() == "recurring":
+        recurring = True
+        words = words[1:]
 
+    if not words:
+        raise ValueError("No task text provided after 'recurring'.")
+
+    time_match = TIME_RE.match(words[0])
+    if time_match:
+        hour, minute = int(time_match.group(1)), time_match.group(2)
+        time_str = f"{hour:02d}:{minute}"
+        label = " ".join(words[1:]).strip()
+        if not label:
+            raise ValueError("No reminder text provided after the time.")
+        return "timed", recurring, time_str, label
+
+    show_when = "morning"
     while words:
         lowered = words[0].lower()
-        if lowered == "recurring" and not recurring:
-            recurring = True
-            words = words[1:]
-        elif lowered in WHEN_KEYWORDS:
+        if lowered in WHEN_KEYWORDS:
             show_when = WHEN_KEYWORDS[lowered]
             words = words[1:]
         else:
@@ -90,7 +117,19 @@ def parse_add_arguments(argument: str) -> tuple[bool, str, str, str]:
     if not label:
         raise ValueError("No task text provided.")
 
-    return recurring, show_when, emoji, label
+    return "checklist", recurring, show_when, emoji, label
+
+
+def _combined_items(user: dict) -> list[tuple[str, int, dict]]:
+    """
+    Build a single numbered view over both checklist tasks and custom-time
+    reminders, as ("task"|"reminder", index-within-its-own-list, item)
+    tuples — used by both !tasks (display) and !remove (lookup by number)
+    so they always agree on the numbering.
+    """
+    items = [("task", i, t) for i, t in enumerate(user["tasks"])]
+    items += [("reminder", i, r) for i, r in enumerate(user["custom_reminders"])]
+    return items
 
 
 class TasksCog(commands.Cog):
@@ -99,19 +138,38 @@ class TasksCog(commands.Cog):
 
     @commands.command(name="add")
     async def add_task(self, ctx: commands.Context, *, argument: str = ""):
-        """Add a new task. See module docstring for the argument format."""
+        """Add a new task or timed reminder. See module docstring for the argument format."""
         try:
-            recurring, show_when, emoji, label = parse_add_arguments(argument)
+            parsed = parse_add_arguments(argument)
         except ValueError:
             await ctx.send(
                 "Please provide a task, e.g. `!add Train`, "
-                "`!add recurring 💊 Take medicine`, or "
-                "`!add evening-only Read before bed`."
+                "`!add recurring 💊 Take medicine`, `!add evening-only Read before bed`, "
+                "or `!add 15:30 Call to book a meeting`."
             )
             return
 
         data = storage.load_data()
         user = storage.get_user(data, ctx.author.id)
+
+        if parsed[0] == "timed":
+            _, recurring, time_str, label = parsed
+            user["custom_reminders"].append(
+                {
+                    "id": uuid.uuid4().hex[:8],
+                    "time": time_str,
+                    "label": label,
+                    "recurring": recurring,
+                    "last_sent": None,
+                }
+            )
+            storage.save_data(data)
+
+            kind = "Recurring reminder" if recurring else "One-off reminder"
+            await ctx.send(f"{kind} set for `{time_str}`: {label}")
+            return
+
+        _, recurring, show_when, emoji, label = parsed
         user["tasks"].append(
             {
                 "id": uuid.uuid4().hex[:8],
@@ -141,11 +199,11 @@ class TasksCog(commands.Cog):
             f"Evening reminder: {user['evening_time']}"
         )
 
-        tasks = user["tasks"]
-        if not tasks:
+        combined = _combined_items(user)
+        if not combined:
             embed = discord.Embed(
                 title="Your tasks",
-                description="You don't have any saved tasks right now.",
+                description="You don't have any saved tasks or reminders right now.",
                 color=discord.Color.blurple(),
             )
             embed.set_footer(text=footer)
@@ -159,11 +217,15 @@ class TasksCog(commands.Cog):
         }
 
         lines = []
-        for i, task in enumerate(tasks, start=1):
-            status = "✅" if task["checked"] else "⬜"
-            recurring_tag = " (🔁 recurring)" if task["recurring"] else ""
-            when_tag = when_tags[task.get("show_when", "morning")]
-            lines.append(f"{i}. {status} {task['emoji']} {task['label']}{recurring_tag}{when_tag}")
+        for i, (kind, _, item) in enumerate(combined, start=1):
+            if kind == "task":
+                status = "✅" if item["checked"] else "⬜"
+                recurring_tag = " (🔁 recurring)" if item["recurring"] else ""
+                when_tag = when_tags[item.get("show_when", "morning")]
+                lines.append(f"{i}. {status} {item['emoji']} {item['label']}{recurring_tag}{when_tag}")
+            else:
+                recurring_tag = " (🔁 recurring)" if item["recurring"] else " (one-off)"
+                lines.append(f"{i}. ⏰ {item['time']} — {item['label']}{recurring_tag}")
 
         embed = discord.Embed(
             title="Your tasks",
@@ -175,23 +237,29 @@ class TasksCog(commands.Cog):
 
     @commands.command(name="remove")
     async def remove_task(self, ctx: commands.Context, number: int = None):
-        """Remove a task by its number as shown in !tasks."""
+        """Remove a task or timed reminder by its number as shown in !tasks."""
         if number is None:
-            await ctx.send("Please provide the number of the task to remove, e.g. `!remove 2`.")
+            await ctx.send("Please provide the number of the item to remove, e.g. `!remove 2`.")
             return
 
         data = storage.load_data()
         user = storage.get_user(data, ctx.author.id)
-        tasks = user["tasks"]
+        combined = _combined_items(user)
 
-        index = number - 1  # displayed list is 1-indexed
-        if index < 0 or index >= len(tasks):
-            await ctx.send(f"No task found with number {number}. Run `!tasks` to see the list.")
+        display_index = number - 1  # displayed list is 1-indexed
+        if display_index < 0 or display_index >= len(combined):
+            await ctx.send(f"No item found with number {number}. Run `!tasks` to see the list.")
             return
 
-        removed = tasks.pop(index)
-        storage.save_data(data)
-        await ctx.send(f"Removed: {removed['emoji']} {removed['label']}")
+        kind, list_index, item = combined[display_index]
+        if kind == "task":
+            removed = user["tasks"].pop(list_index)
+            storage.save_data(data)
+            await ctx.send(f"Removed: {removed['emoji']} {removed['label']}")
+        else:
+            removed = user["custom_reminders"].pop(list_index)
+            storage.save_data(data)
+            await ctx.send(f"Removed reminder: ⏰ {removed['time']} — {removed['label']}")
 
 
 async def setup(bot: commands.Bot):

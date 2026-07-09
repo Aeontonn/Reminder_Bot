@@ -16,6 +16,8 @@ Every user gets:
 - Full control over their own **timezone** and **reminder times** —
   handy when travelling, since it's just a chat command to switch and
   switch back.
+- **Custom-time reminders** for anything outside the daily checklist —
+  a plain DM ping at an exact clock time, either one-off or daily.
 
 All data (user IDs, timezones, tasks, streaks) is stored locally in
 `data.json`, written atomically so a restart mid-write can't corrupt it.
@@ -28,8 +30,10 @@ All data (user IDs, timezones, tasks, streaks) is stored locally in
 | `!add recurring [task]` | Add a task that stays on the checklist every day until removed with `!remove`. |
 | `!add evening [task]` | Add a task that only shows up on the evening checklist (`evening-only` also works). |
 | `!add both [task]` | Add a task that shows up on both the morning and evening checklists (checking it off on one marks it done on the other too). `both-times` also works. |
-| `!tasks` | List your current tasks, numbered, with checked status and tags for recurring / evening / both. |
-| `!remove [number]` | Remove a task by the number shown in `!tasks`. |
+| `!add [HH:MM] [text]` | Add a one-off timed reminder — a plain DM at that exact clock time, unrelated to the checklists. Fires once, then deletes itself. |
+| `!add recurring [HH:MM] [text]` | Same, but fires every day at that time until removed with `!remove`. |
+| `!tasks` | List your current tasks and timed reminders together, numbered, with checked status and tags. |
+| `!remove [number]` | Remove a task or timed reminder by the number shown in `!tasks`. |
 | `!timezone [zone]` | Set or change your timezone, e.g. `!timezone Europe/Stockholm` or `!timezone Asia/Seoul`. |
 | `!morningtime [HH:MM]` | Set what local time your morning checklist is sent (default `08:00`). |
 | `!eveningtime [HH:MM]` | Set what local time your evening checklist/check-in is sent (default `20:00`). |
