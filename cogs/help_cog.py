@@ -65,7 +65,8 @@ class HelpCog(commands.Cog):
             value=(
                 "Show your current task list, numbered, with checked status, "
                 "🔁 for recurring tasks, and a tag showing which checklist(s) "
-                "each task appears on."
+                "each task appears on. Also shows your current morning/evening "
+                "reminder times at the bottom."
             ),
             inline=False,
         )

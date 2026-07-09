@@ -136,9 +136,20 @@ class TasksCog(commands.Cog):
         user = storage.get_user(data, ctx.author.id)
         storage.save_data(data)  # persist in case this created a new user
 
+        footer = (
+            f"Morning reminder: {user['morning_time']}  •  "
+            f"Evening reminder: {user['evening_time']}"
+        )
+
         tasks = user["tasks"]
         if not tasks:
-            await ctx.send("You don't have any saved tasks right now.")
+            embed = discord.Embed(
+                title="Your tasks",
+                description="You don't have any saved tasks right now.",
+                color=discord.Color.blurple(),
+            )
+            embed.set_footer(text=footer)
+            await ctx.send(embed=embed)
             return
 
         when_tags = {
@@ -159,6 +170,7 @@ class TasksCog(commands.Cog):
             description="\n".join(lines),
             color=discord.Color.blurple(),
         )
+        embed.set_footer(text=footer)
         await ctx.send(embed=embed)
 
     @commands.command(name="remove")
