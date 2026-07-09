@@ -26,8 +26,8 @@ All data (user IDs, timezones, tasks, streaks) is stored locally in
 |---|---|
 | `!add [task]` | Add a one-time task, shown once on tomorrow's morning checklist, then cleared automatically. |
 | `!add recurring [task]` | Add a task that stays on the checklist every day until removed with `!remove`. |
-| `!add evening-only [task]` | Add a task that only shows up on the evening checklist. |
-| `!add both-times [task]` | Add a task that shows up on both the morning and evening checklists (checking it off on one marks it done on the other too). |
+| `!add evening [task]` | Add a task that only shows up on the evening checklist (`evening-only` also works). |
+| `!add both [task]` | Add a task that shows up on both the morning and evening checklists (checking it off on one marks it done on the other too). `both-times` also works. |
 | `!tasks` | List your current tasks, numbered, with checked status and tags for recurring / evening / both. |
 | `!remove [number]` | Remove a task by the number shown in `!tasks`. |
 | `!timezone [zone]` | Set or change your timezone, e.g. `!timezone Europe/Stockholm` or `!timezone Asia/Seoul`. |
@@ -36,11 +36,11 @@ All data (user IDs, timezones, tasks, streaks) is stored locally in
 | `!settings` | Show everything saved for you: timezone, reminder times, task counts, streak. |
 | `!help` | List all commands in Discord. |
 
-`recurring`, `evening-only`/`both-times`, and an optional emoji can all
-be combined in `!add`, in any order, e.g.:
+`recurring`, `evening`/`both`, and an optional emoji can all be combined
+in `!add`, in any order, e.g.:
 
 ```
-!add recurring both-times 🚰 Drink water
+!add recurring both 🚰 Drink water
 ```
 
 ## Project structure

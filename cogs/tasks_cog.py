@@ -9,14 +9,16 @@ marked recurring (stays every day until removed with !remove) or one-time
 checklist is sent).
 
 Each task also has a "show_when" setting controlling which checklist(s)
-it appears on: morning-only (default), evening-only, or both.
+it appears on: morning (default), evening, or both. Accepts either the
+short form ("morning"/"evening"/"both") or the long form
+("morning-only"/"evening-only"/"both-times") — both work the same.
 
 Usage:
     !add Do laundry                        -> one-time, morning checklist, default emoji
     !add 🏋️ Train for 30 min                -> one-time, morning checklist, custom emoji
     !add recurring 💊 Take medicine         -> recurring, morning checklist, custom emoji
-    !add evening-only Read before bed       -> one-time, evening checklist only
-    !add recurring both-times 🚰 Drink water -> recurring, shown on both checklists
+    !add evening Read before bed            -> one-time, evening checklist only
+    !add recurring both 🚰 Drink water       -> recurring, shown on both checklists
     !tasks                                  -> list all tasks with their status
     !remove 2                               -> remove task number 2 from !tasks
 """
@@ -31,10 +33,15 @@ import storage
 DEFAULT_EMOJI = "📌"
 
 # Recognized leading keywords for !add, checked case-insensitively and
-# consumed in any order before the optional emoji + task text.
+# consumed in any order before the optional emoji + task text. Both the
+# short and "-only"/"-times" long form are accepted so a natural first
+# guess like "!add morning ..." works the same as "!add morning-only ...".
 WHEN_KEYWORDS = {
+    "morning": "morning",
     "morning-only": "morning",
+    "evening": "evening",
     "evening-only": "evening",
+    "both": "both",
     "both-times": "both",
 }
 
@@ -134,7 +141,11 @@ class TasksCog(commands.Cog):
             await ctx.send("You don't have any saved tasks right now.")
             return
 
-        when_tags = {"morning": "", "evening": " (🌙 evening only)", "both": " (☀️🌙 both)"}
+        when_tags = {
+            "morning": " (☀️ morning only)",
+            "evening": " (🌙 evening only)",
+            "both": " (☀️🌙 both)",
+        }
 
         lines = []
         for i, task in enumerate(tasks, start=1):

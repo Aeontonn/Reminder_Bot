@@ -47,16 +47,16 @@ class HelpCog(commands.Cog):
             inline=False,
         )
         embed.add_field(
-            name="!add evening-only [task] / !add both-times [task]",
+            name="!add evening [task] / !add both [task]",
             value=(
                 "Control which checklist a task appears on. By default "
                 "tasks only show up on the morning checklist. Use "
-                "`evening-only` to show it only in the evening, or "
-                "`both-times` to show it on both. These can be combined "
-                "with `recurring`, in any order, followed by an optional "
-                "emoji.\n"
-                "Examples: `!add evening-only Read before bed`, "
-                "`!add recurring both-times 🚰 Drink water`"
+                "`evening` (or `evening-only`) to show it only at night, "
+                "or `both` (or `both-times`) to show it on both. These can "
+                "be combined with `recurring`, in any order, followed by "
+                "an optional emoji.\n"
+                "Examples: `!add evening Read before bed`, "
+                "`!add recurring both 🚰 Drink water`"
             ),
             inline=False,
         )
