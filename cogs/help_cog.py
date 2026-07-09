@@ -41,16 +41,32 @@ class HelpCog(commands.Cog):
             name="!add recurring [task]",
             value=(
                 "Add a recurring task (e.g. medicine) that stays on your "
-                "checklist every day until you remove it manually. You can "
-                "add an optional emoji right after \"recurring\" or at the "
-                "start of a one-time task.\n"
+                "checklist every day until you remove it manually.\n"
                 "Example: `!add recurring 💊 Take medicine`"
             ),
             inline=False,
         )
         embed.add_field(
+            name="!add evening-only [task] / !add both-times [task]",
+            value=(
+                "Control which checklist a task appears on. By default "
+                "tasks only show up on the morning checklist. Use "
+                "`evening-only` to show it only in the evening, or "
+                "`both-times` to show it on both. These can be combined "
+                "with `recurring`, in any order, followed by an optional "
+                "emoji.\n"
+                "Examples: `!add evening-only Read before bed`, "
+                "`!add recurring both-times 🚰 Drink water`"
+            ),
+            inline=False,
+        )
+        embed.add_field(
             name="!tasks",
-            value="Show your current task list, numbered, with checked status and 🔁 for recurring tasks.",
+            value=(
+                "Show your current task list, numbered, with checked status, "
+                "🔁 for recurring tasks, and a tag showing which checklist(s) "
+                "each task appears on."
+            ),
             inline=False,
         )
         embed.add_field(

@@ -33,9 +33,12 @@ DATA_FILE = "data.json"
 #   - "shown": for one-time tasks, whether it has already appeared in a
 #     morning checklist. Used to purge it the following morning. Unused
 #     for recurring tasks.
+#   - "show_when": which checklist(s) the task appears on — "morning"
+#     (default), "evening", or "both". Missing on older data, so callers
+#     should read it with task.get("show_when", "morning").
 DEFAULT_USER = {
     "timezone": "UTC",
-    "tasks": [],  # list of {"id", "label", "emoji", "checked", "recurring", "shown"}
+    "tasks": [],  # list of {"id", "label", "emoji", "checked", "recurring", "shown", "show_when"}
     "streak": 0,
     "checklist_completed_today": False,
     "morning_time": "08:00",     # "HH:MM" in the user's local timezone, user-configurable

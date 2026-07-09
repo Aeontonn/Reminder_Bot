@@ -8,13 +8,17 @@ marked recurring (stays every day until removed with !remove) or one-time
 (added the evening before, cleared automatically after the morning
 checklist is sent).
 
+Each task also has a "show_when" setting controlling which checklist(s)
+it appears on: morning-only (default), evening-only, or both.
+
 Usage:
-    !add Do laundry                  -> one-time task, default emoji
-    !add 🏋️ Train for 30 min          -> one-time task, custom emoji
-    !add recurring 💊 Take medicine   -> recurring task, custom emoji
-    !add recurring Water the plants   -> recurring task, default emoji
-    !tasks                            -> list all tasks with their status
-    !remove 2                         -> remove task number 2 from !tasks
+    !add Do laundry                        -> one-time, morning checklist, default emoji
+    !add 🏋️ Train for 30 min                -> one-time, morning checklist, custom emoji
+    !add recurring 💊 Take medicine         -> recurring, morning checklist, custom emoji
+    !add evening-only Read before bed       -> one-time, evening checklist only
+    !add recurring both-times 🚰 Drink water -> recurring, shown on both checklists
+    !tasks                                  -> list all tasks with their status
+    !remove 2                               -> remove task number 2 from !tasks
 """
 
 import uuid
@@ -26,14 +30,23 @@ import storage
 
 DEFAULT_EMOJI = "📌"
 
+# Recognized leading keywords for !add, checked case-insensitively and
+# consumed in any order before the optional emoji + task text.
+WHEN_KEYWORDS = {
+    "morning-only": "morning",
+    "evening-only": "evening",
+    "both-times": "both",
+}
 
-def parse_add_arguments(argument: str) -> tuple[bool, str, str]:
+
+def parse_add_arguments(argument: str) -> tuple[bool, str, str, str]:
     """
-    Parse the raw text after !add into (recurring, emoji, label).
+    Parse the raw text after !add into (recurring, show_when, emoji, label).
 
     The expected format is:
-        [recurring] [emoji] <label text>
-    where "recurring" and the emoji are both optional, in that order.
+        [recurring] [morning-only|evening-only|both-times] [emoji] <label text>
+    where the flags and the emoji are all optional, and the two flags can
+    appear in either order. show_when defaults to "morning" if not given.
 
     An "emoji" is detected heuristically: a single word made up entirely
     of non-ASCII characters (covers standard emoji without pulling in an
@@ -44,12 +57,21 @@ def parse_add_arguments(argument: str) -> tuple[bool, str, str]:
         raise ValueError("No task text provided.")
 
     recurring = False
-    if words[0].lower() == "recurring":
-        recurring = True
-        words = words[1:]
+    show_when = "morning"
+
+    while words:
+        lowered = words[0].lower()
+        if lowered == "recurring" and not recurring:
+            recurring = True
+            words = words[1:]
+        elif lowered in WHEN_KEYWORDS:
+            show_when = WHEN_KEYWORDS[lowered]
+            words = words[1:]
+        else:
+            break
 
     if not words:
-        raise ValueError("No task text provided after 'recurring'.")
+        raise ValueError("No task text provided after the flags.")
 
     emoji = DEFAULT_EMOJI
     looks_like_emoji = words and all(ord(ch) > 127 for ch in words[0])
@@ -61,7 +83,7 @@ def parse_add_arguments(argument: str) -> tuple[bool, str, str]:
     if not label:
         raise ValueError("No task text provided.")
 
-    return recurring, emoji, label
+    return recurring, show_when, emoji, label
 
 
 class TasksCog(commands.Cog):
@@ -72,11 +94,12 @@ class TasksCog(commands.Cog):
     async def add_task(self, ctx: commands.Context, *, argument: str = ""):
         """Add a new task. See module docstring for the argument format."""
         try:
-            recurring, emoji, label = parse_add_arguments(argument)
+            recurring, show_when, emoji, label = parse_add_arguments(argument)
         except ValueError:
             await ctx.send(
-                "Please provide a task, e.g. `!add Train` or "
-                "`!add recurring 💊 Take medicine`."
+                "Please provide a task, e.g. `!add Train`, "
+                "`!add recurring 💊 Take medicine`, or "
+                "`!add evening-only Read before bed`."
             )
             return
 
@@ -90,12 +113,14 @@ class TasksCog(commands.Cog):
                 "checked": False,
                 "recurring": recurring,
                 "shown": False,
+                "show_when": show_when,
             }
         )
         storage.save_data(data)
 
         kind = "recurring task" if recurring else "task"
-        await ctx.send(f"Added {kind}: {emoji} {label}")
+        when_note = {"morning": "morning checklist", "evening": "evening checklist", "both": "both checklists"}[show_when]
+        await ctx.send(f"Added {kind} ({when_note}): {emoji} {label}")
 
     @commands.command(name="tasks")
     async def list_tasks(self, ctx: commands.Context):
@@ -109,11 +134,14 @@ class TasksCog(commands.Cog):
             await ctx.send("You don't have any saved tasks right now.")
             return
 
+        when_tags = {"morning": "", "evening": " (🌙 evening only)", "both": " (☀️🌙 both)"}
+
         lines = []
         for i, task in enumerate(tasks, start=1):
             status = "✅" if task["checked"] else "⬜"
             recurring_tag = " (🔁 recurring)" if task["recurring"] else ""
-            lines.append(f"{i}. {status} {task['emoji']} {task['label']}{recurring_tag}")
+            when_tag = when_tags[task.get("show_when", "morning")]
+            lines.append(f"{i}. {status} {task['emoji']} {task['label']}{recurring_tag}{when_tag}")
 
         embed = discord.Embed(
             title="Your tasks",

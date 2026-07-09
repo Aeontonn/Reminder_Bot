@@ -22,19 +22,37 @@ import discord
 import storage
 
 
+EMBED_TITLES = {
+    "morning": "Your morning checklist",
+    "evening": "Your evening checklist",
+}
+
+
 def get_todays_tasks(user: dict) -> list[dict]:
     """
-    Return the subset of a user's tasks that belong to today's checklist:
-    all recurring tasks, plus one-time tasks that have been marked as
-    shown (i.e. included in this morning's checklist).
+    Return every task that belongs to today's day-cycle, across both the
+    morning and evening checklists: all recurring tasks, plus one-time
+    tasks that have been marked as shown (i.e. included in today's cycle
+    since the last morning reset). Used for whole-day completion / streak
+    tracking, independent of which checklist a task is displayed on.
     """
     return [t for t in user["tasks"] if t["recurring"] or t.get("shown")]
 
 
-def build_checklist_embed(tasks: list[dict], streak: int) -> discord.Embed:
+def get_period_tasks(user: dict, period: str) -> list[dict]:
+    """
+    Return the subset of today's tasks that should be displayed on a
+    specific checklist ("morning" or "evening"), based on each task's
+    "show_when" field ("morning", "evening", or "both"). Tasks default to
+    "morning" if the field is missing (older data / backward compatible).
+    """
+    return [t for t in get_todays_tasks(user) if t.get("show_when", "morning") in (period, "both")]
+
+
+def build_checklist_embed(tasks: list[dict], streak: int, period: str) -> discord.Embed:
     """Build the embed shown alongside the checklist buttons."""
     if not tasks:
-        description = "No tasks to check off today."
+        description = "No tasks to check off right now."
     else:
         lines = []
         for task in tasks:
@@ -45,7 +63,7 @@ def build_checklist_embed(tasks: list[dict], streak: int) -> discord.Embed:
     all_checked = bool(tasks) and all(t["checked"] for t in tasks)
     color = discord.Color.green() if all_checked else discord.Color.blurple()
 
-    embed = discord.Embed(title="Your morning checklist", description=description, color=color)
+    embed = discord.Embed(title=EMBED_TITLES[period], description=description, color=color)
     embed.set_footer(text=f"Streak: {streak} days")
     return embed
 
@@ -53,14 +71,15 @@ def build_checklist_embed(tasks: list[dict], streak: int) -> discord.Embed:
 class TaskToggleButton(discord.ui.Button):
     """A single checklist button bound to one specific task (by id)."""
 
-    def __init__(self, user_id: int, task: dict):
+    def __init__(self, user_id: int, period: str, task: dict):
         style = discord.ButtonStyle.success if task["checked"] else discord.ButtonStyle.secondary
         super().__init__(
             label=f"{task['emoji']} {task['label']}"[:80],
             style=style,
-            custom_id=f"task_toggle:{user_id}:{task['id']}",
+            custom_id=f"task_toggle:{period}:{user_id}:{task['id']}",
         )
         self.user_id = user_id
+        self.period = period
         self.task_id = task["id"]
 
     async def callback(self, interaction: discord.Interaction):
@@ -88,6 +107,10 @@ class TaskToggleButton(discord.ui.Button):
 
         task["checked"] = not task["checked"]
 
+        # Whole-day completion (streak) always considers ALL of today's
+        # tasks, regardless of whether they're shown on the morning or
+        # evening checklist — a "both" task checked off in the morning
+        # stays checked when it shows up again on the evening checklist.
         todays_tasks = get_todays_tasks(user)
         all_checked = bool(todays_tasks) and all(t["checked"] for t in todays_tasks)
         newly_completed = all_checked and not user["checklist_completed_today"]
@@ -104,8 +127,12 @@ class TaskToggleButton(discord.ui.Button):
 
         storage.save_data(data)
 
-        new_view = ChecklistView(self.user_id, todays_tasks)
-        new_embed = build_checklist_embed(todays_tasks, user["streak"])
+        # Only this message's own period's tasks are shown when rebuilding
+        # it, so toggling a "both" task on the morning checklist doesn't
+        # suddenly make evening-only tasks appear there.
+        period_tasks = get_period_tasks(user, self.period)
+        new_view = ChecklistView(self.user_id, self.period, period_tasks)
+        new_embed = build_checklist_embed(period_tasks, user["streak"], self.period)
         await interaction.response.edit_message(embed=new_embed, view=new_view)
 
         if newly_completed:
@@ -115,23 +142,24 @@ class TaskToggleButton(discord.ui.Button):
 class ChecklistView(discord.ui.View):
     """Persistent view holding one TaskToggleButton per task in the checklist."""
 
-    def __init__(self, user_id: int, tasks: list[dict]):
+    def __init__(self, user_id: int, period: str, tasks: list[dict]):
         super().__init__(timeout=None)
         for task in tasks:
-            self.add_item(TaskToggleButton(user_id, task))
+            self.add_item(TaskToggleButton(user_id, period, task))
 
 
 def build_registered_views(all_data: dict) -> list[discord.ui.View]:
     """
-    Reconstruct one ChecklistView per user with an active (non-empty)
-    checklist. Called once at bot startup so that buttons on checklists
-    sent before a restart keep working afterwards — discord.py requires
-    persistent views to be re-registered with bot.add_view() every time
-    the process starts.
+    Reconstruct one ChecklistView per user per period (morning/evening)
+    with an active (non-empty) checklist. Called once at bot startup so
+    that buttons on checklists sent before a restart keep working
+    afterwards — discord.py requires persistent views to be re-registered
+    with bot.add_view() every time the process starts.
     """
     views = []
     for user_id_str, user in all_data.items():
-        todays_tasks = get_todays_tasks(user)
-        if todays_tasks:
-            views.append(ChecklistView(int(user_id_str), todays_tasks))
+        for period in ("morning", "evening"):
+            period_tasks = get_period_tasks(user, period)
+            if period_tasks:
+                views.append(ChecklistView(int(user_id_str), period, period_tasks))
     return views

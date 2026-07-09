@@ -10,9 +10,11 @@ user can also set their own custom time via !morningtime / !eveningtime).
 For every registered user it converts the current UTC time to their
 local timezone via zoneinfo, and:
   - at the user's configured morning_time (default 08:00): sends the
-    interactive morning checklist DM
+    interactive morning checklist DM (tasks with show_when "morning" or
+    "both")
   - at the user's configured evening_time (default 20:00): sends the
-    evening check-in DM
+    interactive evening checklist DM (tasks with show_when "evening" or
+    "both"), or a plain check-in message if there's nothing to show
 
 Duplicate sends (e.g. if the loop is delayed and "catches" the same
 local time twice) are prevented by recording the local date the
@@ -88,7 +90,7 @@ class RemindersCog(commands.Cog):
                 and local_now.minute == evening_minute
                 and user.get("last_evening_sent") != today_str
             ):
-                await self._send_evening_reminder(int(user_id_str))
+                await self._send_evening_reminder(int(user_id_str), user)
                 user["last_evening_sent"] = today_str
                 changed = True
 
@@ -115,17 +117,16 @@ class RemindersCog(commands.Cog):
         user["tasks"] = tasks_list
         user["checklist_completed_today"] = False
 
-        todays_tasks = views.get_todays_tasks(user)
+        morning_tasks = views.get_period_tasks(user, "morning")
 
         discord_user = await self._fetch_user_safely(user_id)
         if discord_user is None:
             return
 
-        embed = views.build_checklist_embed(todays_tasks, user["streak"])
-        view = views.ChecklistView(user_id, todays_tasks) if todays_tasks else None
-
         try:
-            if todays_tasks:
+            if morning_tasks:
+                embed = views.build_checklist_embed(morning_tasks, user["streak"], "morning")
+                view = views.ChecklistView(user_id, "morning", morning_tasks)
                 await discord_user.send(embed=embed, view=view)
             else:
                 await discord_user.send(
@@ -136,20 +137,31 @@ class RemindersCog(commands.Cog):
             # User has DMs disabled / blocked the bot; nothing more we can do.
             pass
 
-    async def _send_evening_reminder(self, user_id: int):
+    async def _send_evening_reminder(self, user_id: int, user: dict):
+        evening_tasks = views.get_period_tasks(user, "evening")
+
         discord_user = await self._fetch_user_safely(user_id)
         if discord_user is None:
             return
 
         try:
-            await discord_user.send(
-                "Evening check-in! 🌙 Have you done everything you needed to today?\n"
-                "Don't forget to add tomorrow's tasks with "
-                "`!add [task]` (or `!add recurring [task]` for "
-                "something that should repeat every day).\n"
-                "Want to change when your reminders are sent? Use "
-                "`!morningtime HH:MM` and `!eveningtime HH:MM`."
-            )
+            if evening_tasks:
+                embed = views.build_checklist_embed(evening_tasks, user["streak"], "evening")
+                view = views.ChecklistView(user_id, "evening", evening_tasks)
+                await discord_user.send(
+                    content="Evening check-in! 🌙 Here's what's left for today:",
+                    embed=embed,
+                    view=view,
+                )
+            else:
+                await discord_user.send(
+                    "Evening check-in! 🌙 Have you done everything you needed to today?\n"
+                    "Don't forget to add tomorrow's tasks with "
+                    "`!add [task]` (or `!add recurring [task]` for "
+                    "something that should repeat every day).\n"
+                    "Want to change when your reminders are sent? Use "
+                    "`!morningtime HH:MM` and `!eveningtime HH:MM`."
+                )
         except discord.Forbidden:
             pass
 
